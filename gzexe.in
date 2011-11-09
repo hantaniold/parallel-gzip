@@ -90,8 +90,12 @@ for i do
   if test $decomp -eq 0; then
     sed 1q $0 > $tmp
     sed "s|^if tail|if $tail|" >> $tmp <<'EOF'
-skip=18
+skip=22
+set -C
+umask=`umask`
+umask 77
 if tail +$skip $0 | "BINDIR"/gzip -cd > /tmp/gztmp$$; then
+  umask $umask
   /bin/chmod 700 /tmp/gztmp$$
   prog="`echo $0 | /bin/sed 's|^.*/||'`"
   if /bin/ln /tmp/gztmp$$ "/tmp/$prog" 2>/dev/null; then
@@ -107,7 +111,7 @@ else
   echo Cannot decompress $0; exit 1
 fi; exit $res
 EOF
-    "BINDIR"/gzip -cv9 "$i" >> $tmp || {
+    gzip -cv9 "$i" >> $tmp || {
       /bin/rm -f $tmp
       echo ${x}: compression not possible for $i, file unchanged.
       res=1
@@ -116,11 +120,11 @@ EOF
 
   else
     # decompression
-    skip=18
+    skip=22
     if sed -e 1d -e 2q "$i" | grep "^skip=[0-9]*$" >/dev/null; then
       eval `sed -e 1d -e 2q "$i"`
     fi
-    if tail +$skip "$i" | "BINDIR"/gzip -cd > $tmp; then
+    if tail +$skip "$i" | gzip -cd > $tmp; then
       :
     else
       echo ${x}: $i probably not in gzexe format, file unchanged.

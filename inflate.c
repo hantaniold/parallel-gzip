@@ -100,11 +100,10 @@
 static char rcsid[] = "$Id: inflate.c,v 0.14 1993/06/10 13:27:04 jloup Exp $";
 #endif
 
-#include <sys/types.h>
-
+#include <config.h>
 #include "tailor.h"
 
-#if defined(STDC_HEADERS) || !defined(NO_STDLIB_H)
+#if defined STDC_HEADERS || defined HAVE_STDLIB_H
 #  include <stdlib.h>
 #endif
 
@@ -360,6 +359,7 @@ int *m;                 /* maximum lookup bits, returns actual */
     if ((j = *p++) != 0)
       v[x[j]++] = i;
   } while (++i < n);
+  n = x[g];                   /* set n to length of v */
 
 
   /* Generate the Huffman codes and for each, make the table entries */
@@ -390,12 +390,13 @@ int *m;                 /* maximum lookup bits, returns actual */
         {                       /* too few codes for k-w bit table */
           f -= a + 1;           /* deduct codes from patterns left */
           xp = c + k;
-          while (++j < z)       /* try smaller tables up to z bits */
-          {
-            if ((f <<= 1) <= *++xp)
-              break;            /* enough codes to use up j bits */
-            f -= *xp;           /* else deduct codes from patterns */
-          }
+	  if (j < z)
+	    while (++j < z)       /* try smaller tables up to z bits */
+	    {
+	      if ((f <<= 1) <= *++xp)
+		break;            /* enough codes to use up j bits */
+	      f -= *xp;           /* else deduct codes from patterns */
+	    }
         }
         z = 1 << j;             /* table entries for j-bit table */
 
@@ -767,6 +768,8 @@ int inflate_dynamic()
     return i;                   /* incomplete code set */
   }
 
+  if (tl == NULL)		/* Grrrhhh */
+	return 2;
 
   /* read in literal and distance code lengths */
   n = nl + nd;

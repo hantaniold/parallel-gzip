@@ -7,6 +7,7 @@
 static char rcsid[] = "$Id: unlzh.c,v 1.2 1993/06/24 10:59:01 jloup Exp $";
 #endif
 
+#include <config.h>
 #include <stdio.h>
 
 #include "tailor.h"

@@ -15,6 +15,7 @@ block=1024
 
 warn="(does not preserve modes and timestamp)"
 tmp=/tmp/zfoo.$$
+set -C
 echo hi > $tmp.1
 echo hi > $tmp.2
 if test -z "`(${CPMOD-cpmod} $tmp.1 $tmp.2) 2>&1`"; then

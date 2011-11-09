@@ -1,26 +1,35 @@
-dnl Process this file with autoconf to produce a configure script for gzip
-dnl
-dnl Same as AC_RETSIGTYPE, but use a void default.
-dnl
-define(AC_RETSIGTYP,
-[AC_COMPILE_CHECK([return type of signal handlers],
-[#include <sys/types.h>
-#include <signal.h>
-#ifdef signal
-#undef signal
-#endif
-extern void (*signal ()) ();],
-[int i;],
-[],
-[AC_DEFINE(RETSIGTYPE, int)],
-)]
-)dnl
-dnl
-dnl End of local macros
-dnl
+# Configure template for gzip.
+
+# Copyright (C) 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
+# Copyright (C) 1992-1993 Jean-loup Gailly
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+# 02111-1307, USA.
+
 AC_INIT(gzip.c)
+AM_INIT_AUTOMAKE(gzip, 1.3.3)
+AM_CONFIG_HEADER(config.h)
+AC_PREREQ(2.53)
 AC_PROG_CC
-AC_PROG_CPP
+AC_PROG_LN_S
+AC_PROG_SHELL
+AC_OBJEXT
+AC_AIX
+AC_MINIX
+AC_SYS_LARGEFILE
+
 dnl
 dnl Try to assemble match.S with and without leading underline.
 dnl cc -E produces incorrect asm files on SVR4, we must use /lib/cpp.
@@ -32,67 +41,48 @@ cat > conftest.c <<EOF
 int foo() {return 0;}
 EOF
 eval "$CC -c conftest.c > /dev/null 2>&1"
-if nm conftest.o | grep _foo > /dev/null 2>&1 ; then
+if nm conftest.$OBJEXT | grep _foo > /dev/null 2>&1 ; then
   :
 else
   ASCPP="${ASCPP} -DNO_UNDERLINE"
 fi
-rm -f _match.o conftest.c conftest.o
+rm -f _match.$OBJEXT conftest.c conftest.$OBJEXT
 if echo "$DEFS" | grep NO_ASM >/dev/null; then
   :
 else
   echo checking for assembler
-  OBJA=""
   if eval "$ASCPP $srcdir/match.S > _match.s 2>/dev/null"; then
     if test ! -s _match.s || grep error < _match.s > /dev/null; then
       :
-    elif eval "$CC -c _match.s >/dev/null 2>&1" && test -f _match.o; then
-      DEFS="${DEFS} -DASMV"
-      OBJA=match.o
+    elif eval "$CC -c _match.s >/dev/null 2>&1" && test -f _match.$OBJEXT; then
+      AC_DEFINE(ASMV, ,
+	[Define if an assembler version of longest_match is available.])
+      AC_LIBOBJ(match)
     fi
   fi
-  rm -f _match.s _match.o
+  rm -f _match.s _match.$OBJEXT
 fi
 dnl
-AC_PROG_INSTALL
-AC_AIX
-AC_MINIX
+AC_EXEEXT
 AC_ISC_POSIX
-AC_DYNIX_SEQ
+AC_C_CONST
 AC_STDC_HEADERS
-dnl if STDC_HEADERS can't be defined, look for special files:
-AC_HEADER_CHECK(string.h, ,AC_DEFINE(NO_STRING_H))
-AC_HEADER_CHECK(stdlib.h, ,AC_DEFINE(NO_STDLIB_H))
-AC_HEADER_CHECK(memory.h, ,AC_DEFINE(NO_MEMORY_H))
-AC_HEADER_CHECK(fcntl.h,  ,AC_DEFINE(NO_FCNTL_H))
-AC_HEADER_CHECK(time.h,   ,AC_DEFINE(NO_TIME_H))
-AC_HAVE_HEADERS(unistd.h)
-utime=0
-AC_HEADER_CHECK(utime.h, utime=1 ,AC_DEFINE(NO_UTIME_H))
-if test $utime -eq 0; then
-  AC_HAVE_HEADERS(sys/utime.h)
-fi
-AC_DIR_HEADER
-AC_XENIX_DIR
-AC_RETSIGTYP
-AC_SIZE_T
-AC_HEADER_EGREP(off_t, sys/types.h, ,AC_DEFINE(NO_OFF_T))
-AC_HAVE_POUNDBANG([SEDCMD="1d"], [SEDCMD=""])
-AC_PREFIX(gzip)
-if test -z "$G" -a -n "$prefix" -a -f $prefix/bin/gznew; then
-  G=g
-fi
-if test -z "$ZCAT"; then
-  if test -n "$prefix" -a -f $prefix/bin/gzcat; then
-    ZCAT=gzcat
-  else
-    ZCAT=${G}zcat
-  fi
-fi
-AC_SUBST(ZCAT)dnl
-AC_SUBST(G)dnl
+AC_CHECK_HEADERS(fcntl.h limits.h memory.h \
+  stdlib.h string.h sys/utime.h time.h unistd.h utime.h)
+AC_CHECK_FUNCS(lstat utime)
+AC_REPLACE_FUNCS(rpmatch)
+AC_HEADER_DIRENT
+AC_TYPE_SIGNAL
+AC_TYPE_SIZE_T
+AC_TYPE_OFF_T
+AC_SYS_INTERPRETER
+case $interpval in
+yes) SEDCMD='1d';;
+*) SEDCMD='';;
+esac
+
+AC_PREFIX_PROGRAM(gzip)
 AC_SUBST(CFLAGS)dnl
 AC_SUBST(ASCPP)dnl
-AC_SUBST(OBJA)dnl
 AC_SUBST(SEDCMD)dnl
 AC_OUTPUT(Makefile)
