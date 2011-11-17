@@ -749,6 +749,7 @@ int inflate_dynamic()
 
 
   /* read in bit-length-code lengths */
+  #pragma omp parallel for
   for (j = 0; j < nb; j++)
   {
     NEEDBITS(3)

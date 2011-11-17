@@ -295,6 +295,7 @@ void lm_init (pack_level, flags)
 
     /* Initialize the hash table. */
 #if defined(MAXSEG_64K) && HASH_BITS == 15
+    #pragma omp parallel for
     for (j = 0;  j < HASH_SIZE; j++) head[j] = NIL;
 #else
     memzero((char*)head, HASH_SIZE*sizeof(*head));
@@ -336,6 +337,7 @@ void lm_init (pack_level, flags)
     while (lookahead < MIN_LOOKAHEAD && !eofile) fill_window();
 
     ins_h = 0;
+    #pragma omp parallel for
     for (j=0; j<MIN_MATCH-1; j++) UPDATE_HASH(ins_h, window[j]);
     /* If lookahead < MIN_MATCH, ins_h is garbage, but this is
      * not important since only literal bytes will be emitted.
@@ -540,10 +542,13 @@ local void fill_window()
 
         block_start -= (long) WSIZE;
 
+        #pragma omp parallel for
         for (n = 0; n < HASH_SIZE; n++) {
             m = head[n];
             head[n] = (Pos)(m >= WSIZE ? m-WSIZE : NIL);
         }
+        
+        #pragma omp parallel for
         for (n = 0; n < WSIZE; n++) {
             m = prev[n];
             prev[n] = (Pos)(m >= WSIZE ? m-WSIZE : NIL);
