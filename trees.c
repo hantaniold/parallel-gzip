@@ -46,16 +46,15 @@
  *      void ct_tally (int dist, int lc);
  *          Save the match info and tally the frequency counts.
  *
- *      off_t flush_block (char *buf, ulg stored_len, int eof)
+ *      long flush_block (char *buf, ulg stored_len, int eof)
  *          Determine the best encoding for the current block: dynamic trees,
  *          static trees or store, and output the encoded block to the zip
  *          file. Returns the total compressed length for the file so far.
  *
  */
 
-#include <config.h>
 #include <ctype.h>
-
+#include <omp.h>
 #include "tailor.h"
 #include "gzip.h"
 
@@ -91,6 +90,9 @@ static char rcsid[] = "$Id: trees.c,v 0.12 1993/06/10 13:27:54 jloup Exp $";
 #define BL_CODES  19
 /* number of codes used to transfer the bit lengths */
 
+#define CHUNK_SIZE 100
+/* Size of chunks that an instruction is split into, for the purposes of
+   openmp */
 
 local int near extra_lbits[LENGTH_CODES] /* extra bits for each length code */
    = {0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0};
@@ -272,16 +274,17 @@ local uch flag_bit;         /* current bit used in flags */
 local ulg opt_len;        /* bit length of current block with optimal trees */
 local ulg static_len;     /* bit length of current block with static trees */
 
-local off_t compressed_len; /* total bit length of compressed file */
+local ulg compressed_len; /* total bit length of compressed file */
 
-local off_t input_len;      /* total byte length of input file */
+local ulg input_len;      /* total byte length of input file */
 /* input_len is for debugging only since we can get it by other means. */
 
 ush *file_type;        /* pointer to UNKNOWN, BINARY or ASCII */
 int *file_method;      /* pointer to DEFLATE or STORE */
 
 #ifdef DEBUG
-extern off_t bits_sent;  /* bit length of the compressed data */
+extern ulg bits_sent;  /* bit length of the compressed data */
+extern long isize;     /* byte length of input file */
 #endif
 
 extern long block_start;       /* window offset of current block */
@@ -347,10 +350,8 @@ void ct_init(attr, methodp)
 
     /* Initialize the mapping length (0..255) -> length code (0..28) */
     length = 0;
-    #pragma omp parallel for
     for (code = 0; code < LENGTH_CODES-1; code++) {
         base_length[code] = length;
-        #pragma omp parallel for
         for (n = 0; n < (1<<extra_lbits[code]); n++) {
             length_code[length++] = (uch)code;
         }
@@ -364,21 +365,16 @@ void ct_init(attr, methodp)
 
     /* Initialize the mapping dist (0..32K) -> dist code (0..29) */
     dist = 0;
-    #pragma omp parallel for
     for (code = 0 ; code < 16; code++) {
         base_dist[code] = dist;
-        #pragma omp parallel for
         for (n = 0; n < (1<<extra_dbits[code]); n++) {
             dist_code[dist++] = (uch)code;
         }
     }
     Assert (dist == 256, "ct_init: dist != 256");
     dist >>= 7; /* from now on, all distances are divided by 128 */
-
-    int i;
-    for (i=0 ; code < D_CODES; code++) {
+    for ( ; code < D_CODES; code++) {
         base_dist[code] = dist << 7;
-        #pragma omp parallel for
         for (n = 0; n < (1<<(extra_dbits[code]-7)); n++) {
             dist_code[256 + dist++] = (uch)code;
         }
@@ -420,10 +416,8 @@ local void init_block()
     /* Initialize the trees. */
     #pragma omp parallel for
     for (n = 0; n < L_CODES;  n++) dyn_ltree[n].Freq = 0;
-    
     #pragma omp parallel for
     for (n = 0; n < D_CODES;  n++) dyn_dtree[n].Freq = 0;
-    
     #pragma omp parallel for
     for (n = 0; n < BL_CODES; n++) bl_tree[n].Freq = 0;
 
@@ -510,7 +504,7 @@ local void gen_bitlen(desc)
     ush f;              /* frequency */
     int overflow = 0;   /* number of elements with bit length too large */
 
-    #pragma omp parallel for
+   // #pragma omp parallel for
     for (bits = 0; bits <= MAX_BITS; bits++) bl_count[bits] = 0;
 
     /* In a first pass, compute the optimal bit lengths (which may
@@ -518,7 +512,6 @@ local void gen_bitlen(desc)
      */
     tree[heap[heap_max]].Len = 0; /* root of the heap */
 
-    #pragma omp parallel for
     for (h = heap_max+1; h < HEAP_SIZE; h++) {
         n = heap[h];
         bits = tree[tree[n].Dad].Len + 1;
@@ -558,20 +551,20 @@ local void gen_bitlen(desc)
      * lengths instead of fixing only the wrong ones. This idea is taken
      * from 'ar' written by Haruhiko Okumura.)
      */
-     int i;
     for (bits = max_length; bits != 0; bits--) {
         n = bl_count[bits];
-        for(i = 0; n != 0; n--)
-        {
+        while (n != 0) {
             m = heap[--h];
             if (m > max_code) continue;
             if (tree[m].Len != (unsigned) bits) {
                 Trace((stderr,"code %d bits %d->%d\n", m, tree[m].Len, bits));
                 opt_len += ((long)bits-(long)tree[m].Len)*(long)tree[m].Freq;
                 tree[m].Len = (ush)bits;
+            }
+            n--;
         }
     }
-}}
+}
 
 /* ===========================================================================
  * Generate the codes for a given tree and bit counts (which need not be
@@ -593,7 +586,6 @@ local void gen_codes (tree, max_code)
     /* The distribution counts are first used to generate the code values
      * without bit reversal.
      */
-    #pragma omp parallel for
     for (bits = 1; bits <= MAX_BITS; bits++) {
         next_code[bits] = code = (code + bl_count[bits-1]) << 1;
     }
@@ -604,7 +596,6 @@ local void gen_codes (tree, max_code)
             "inconsistent bit counts");
     Tracev((stderr,"\ngen_codes: max_code %d ", max_code));
 
-    #pragma omp parallel for
     for (n = 0;  n <= max_code; n++) {
         int len = tree[n].Len;
         if (len == 0) continue;
@@ -634,13 +625,18 @@ local void build_tree(desc)
     int max_code = -1; /* largest code with non zero frequency */
     int node = elems;  /* next internal node of the tree */
 
+    int chunk = CHUNK_SIZE;  /* Size of chunk to be used */
+
     /* Construct the initial heap, with least frequent element in
      * heap[SMALLEST]. The sons of heap[n] are heap[2*n] and heap[2*n+1].
      * heap[0] is not used.
      */
     heap_len = 0, heap_max = HEAP_SIZE;
 
-    #pragma omp parallel for
+    //#pragma omp parallel private(n)
+    {
+    /* Parallelize for loop */
+      //#pragma omp for schedule(dynamic, chunk)
     for (n = 0; n < elems; n++) {
         if (tree[n].Freq != 0) {
             heap[++heap_len] = max_code = n;
@@ -649,51 +645,73 @@ local void build_tree(desc)
             tree[n].Len = 0;
         }
     }
-
+    }
     /* The pkzip format requires that at least one distance code exists,
      * and that at least one bit should be sent even if there is only one
      * possible code. So to avoid special checks later on we force at least
      * two codes of non zero frequency.
      */
     while (heap_len < 2) {
-        int new = heap[++heap_len] = (max_code < 2 ? ++max_code : 0);
-        tree[new].Freq = 1;
-        depth[new] = 0;
-        opt_len--; if (stree) static_len -= stree[new].Len;
+      int new;
+      /* Parallelize individual parts of loop that are not co-dependent */
+
+#pragma omp parallel
+      {      
+#pragma omp sections
+	{
+#pragma omp section
+	  new = heap[++heap_len] = (max_code < 2 ? ++max_code : 0);
+#pragma omp section
+	  tree[new].Freq = 1;
+#pragma omp section
+	  depth[new] = 0;
+#pragma omp section
+	  opt_len--;
+#pragma omp section
+	  if (stree) static_len -= stree[new].Len;
+	}
         /* new is 0 or 1 so it does not have extra bits */
+      }
     }
     desc->max_code = max_code;
 
     /* The elements heap[heap_len/2+1 .. heap_len] are leaves of the tree,
      * establish sub-heaps of increasing lengths:
      */
-    #pragma omp parallel for
     for (n = heap_len/2; n >= 1; n--) pqdownheap(tree, n);
-
+    
     /* Construct the Huffman tree by repeatedly combining the least two
      * frequent nodes.
      */
     do {
-        pqremove(tree, n);   /* n = node of least frequency */
-        m = heap[SMALLEST];  /* m = node of next least frequency */
-
-        heap[--heap_max] = n; /* keep the nodes sorted by frequency */
-        heap[--heap_max] = m;
-
-        /* Create a new node father of n and m */
-        tree[node].Freq = tree[n].Freq + tree[m].Freq;
-        depth[node] = (uch) (MAX(depth[n], depth[m]) + 1);
-        tree[n].Dad = tree[m].Dad = (ush)node;
+      pqremove(tree, n);   /* n = node of least frequency */
+      m = heap[SMALLEST];  /* m = node of next least frequency */
+      
+      heap[--heap_max] = n; /* keep the nodes sorted by frequency */
+      heap[--heap_max] = m;
+      
+#pragma omp parallel shared(tree, heap)
+      {
+#pragma omp sections
+	{
+#pragma omp section
+	  /* Create a new node father of n and m */
+	  tree[node].Freq = tree[n].Freq + tree[m].Freq;
+#pragma omp section
+	  depth[node] = (uch) (MAX(depth[n], depth[m]) + 1);
+#pragma omp section
+	  tree[n].Dad = tree[m].Dad = (ush)node;
+	}
+      }
 #ifdef DUMP_BL_TREE
-        if (tree == bl_tree) {
+	  if (tree == bl_tree) {
             fprintf(stderr,"\nnode %d(%d), sons %d(%d) %d(%d)",
                     node, tree[node].Freq, n, tree[n].Freq, m, tree[m].Freq);
-        }
+	  }
 #endif
-        /* and insert the new node in the heap */
-        heap[SMALLEST] = node++;
-        pqdownheap(tree, SMALLEST);
-
+	  /* and insert the new node in the heap */
+	  heap[SMALLEST] = node++;
+	  pqdownheap(tree, SMALLEST);
     } while (heap_len >= 2);
 
     heap[--heap_max] = heap[SMALLEST];
@@ -728,7 +746,6 @@ local void scan_tree (tree, max_code)
     if (nextlen == 0) max_count = 138, min_count = 3;
     tree[max_code+1].Len = (ush)0xffff; /* guard */
 
-    #pragma omp parallel for
     for (n = 0; n <= max_code; n++) {
         curlen = nextlen; nextlen = tree[n+1].Len;
         if (++count < max_count && curlen == nextlen) {
@@ -769,11 +786,10 @@ local void send_tree (tree, max_code)
     int count = 0;             /* repeat count of the current code */
     int max_count = 7;         /* max repeat count */
     int min_count = 4;         /* min repeat count */
-
     /* tree[max_code+1].Len = -1; */  /* guard already set */
     if (nextlen == 0) max_count = 138, min_count = 3;
 
-    #pragma omp parallel for
+    {
     for (n = 0; n <= max_code; n++) {
         curlen = nextlen; nextlen = tree[n+1].Len;
         if (++count < max_count && curlen == nextlen) {
@@ -802,6 +818,7 @@ local void send_tree (tree, max_code)
         } else {
             max_count = 7, min_count = 4;
         }
+    }
     }
 }
 
@@ -832,7 +849,7 @@ local int build_bl_tree()
     }
     /* Update opt_len to include the bit length tree and counts */
     opt_len += 3*(max_blindex+1) + 5+5+4;
-    Tracev((stderr, "\ndyn trees: dyn %lu, stat %lu", opt_len, static_len));
+    Tracev((stderr, "\ndyn trees: dyn %ld, stat %ld", opt_len, static_len));
 
     return max_blindex;
 }
@@ -854,15 +871,17 @@ local void send_all_trees(lcodes, dcodes, blcodes)
     send_bits(lcodes-257, 5); /* not +255 as stated in appnote.txt */
     send_bits(dcodes-1,   5);
     send_bits(blcodes-4,  4); /* not -3 as stated in appnote.txt */
-    #pragma omp parallel for
     for (rank = 0; rank < blcodes; rank++) {
         Tracev((stderr, "\nbl code %2d ", bl_order[rank]));
         send_bits(bl_tree[bl_order[rank]].Len, 3);
     }
+    Tracev((stderr, "\nbl tree: sent %ld", bits_sent));
 
     send_tree((ct_data near *)dyn_ltree, lcodes-1); /* send the literal tree */
+    Tracev((stderr, "\nlit tree: sent %ld", bits_sent));
 
     send_tree((ct_data near *)dyn_dtree, dcodes-1); /* send the distance tree */
+    Tracev((stderr, "\ndist tree: sent %ld", bits_sent));
 }
 
 /* ===========================================================================
@@ -870,7 +889,7 @@ local void send_all_trees(lcodes, dcodes, blcodes)
  * trees or store, and output the encoded block to the zip file. This function
  * returns the total compressed length for the file so far.
  */
-off_t flush_block(buf, stored_len, eof)
+ulg flush_block(buf, stored_len, eof)
     char *buf;        /* input block, or NULL if too old */
     ulg stored_len;   /* length of input block */
     int eof;          /* true if this is the last block for a file */
@@ -885,10 +904,10 @@ off_t flush_block(buf, stored_len, eof)
 
     /* Construct the literal and distance trees */
     build_tree((tree_desc near *)(&l_desc));
-    Tracev((stderr, "\nlit data: dyn %lu, stat %lu", opt_len, static_len));
+    Tracev((stderr, "\nlit data: dyn %ld, stat %ld", opt_len, static_len));
 
     build_tree((tree_desc near *)(&d_desc));
-    Tracev((stderr, "\ndist data: dyn %lu, stat %lu", opt_len, static_len));
+    Tracev((stderr, "\ndist data: dyn %ld, stat %ld", opt_len, static_len));
     /* At this point, opt_len and static_len are the total bit lengths of
      * the compressed block data, excluding the tree representations.
      */
@@ -961,10 +980,12 @@ off_t flush_block(buf, stored_len, eof)
     init_block();
 
     if (eof) {
-        Assert (input_len == bytes_in, "bad input size");
+        Assert (input_len == isize, "bad input size");
         bi_windup();
         compressed_len += 7;  /* align on byte boundary */
     }
+    Tracev((stderr,"\ncomprlen %lu(%lu) ", compressed_len>>3,
+           compressed_len-7*eof));
 
     return compressed_len >> 3;
 }
@@ -1007,7 +1028,7 @@ int ct_tally (dist, lc)
         ulg out_length = (ulg)last_lit*8L;
         ulg in_length = (ulg)strstart-block_start;
         int dcode;
-        #pragma omp parallel for
+//        #pragma omp parallel for
         for (dcode = 0; dcode < D_CODES; dcode++) {
             out_length += (ulg)dyn_dtree[dcode].Freq*(5L+extra_dbits[dcode]);
         }
@@ -1041,11 +1062,27 @@ local void compress_block(ltree, dtree)
     int extra;          /* number of extra bits to send */
 
     if (last_lit != 0) do {
-        if ((lx & 7) == 0) flag = flag_buf[fx++];
-        lc = l_buf[lx++];
+        //#pragma omp parallel
+	{
+	  //#pragma omp sections
+	  {
+	    //#pragma omp section
+	    if ((lx & 7) == 0) flag = flag_buf[fx++];
+	    //#pragma omp section
+	    lc = l_buf[lx++];
+	  }
+	}
         if ((flag & 1) == 0) {
+	  //#pragma omp parallel
+	  {
+	    //#pragma omp sections
+	    {
+	      //#pragma omp section
             send_code(lc, ltree); /* send a literal byte */
-            Tracecv(isgraph(lc), (stderr," '%c' ", lc));
+            //#pragma omp section
+	    Tracecv(isgraph(lc), (stderr," '%c' ", lc));
+	    }
+	  }
         } else {
             /* Here, lc is the match length - MIN_MATCH */
             code = length_code[lc];
@@ -1089,6 +1126,6 @@ local void set_file_type()
     while (n < LITERALS) bin_freq += dyn_ltree[n++].Freq;
     *file_type = bin_freq > (ascii_freq >> 2) ? BINARY : ASCII;
     if (*file_type == BINARY && translate_eol) {
-        warning ("-l used on binary file");
+        warn("-l used on binary file", "");
     }
 }
