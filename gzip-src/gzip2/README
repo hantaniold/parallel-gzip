@@ -1,0 +1,1 @@
+Parallel Implementation of Gzip using Pthreads. Only Supports Compression.

@@ -1,0 +1,9 @@
+#!/bin/bash
+
+: ${PAGER=less}
+export PAGER
+
+PATH="//bin:$PATH"
+export PATH
+
+exec zmore ${1+"$@"}
