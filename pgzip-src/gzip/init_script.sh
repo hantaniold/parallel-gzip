@@ -25,7 +25,7 @@ else
         fi
 
         wget $SRC
-        unzip $ZIP
+        tar -xzf $ZIP
         rm $ZIP
 	
 	if [ -f "$BUILD/configure" ]

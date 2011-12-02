@@ -5,12 +5,12 @@ URL=https://github.com/SeanHogan/parallel-gzip/tarball/master
 TAR=master
 SUITE=SeanHogan-parallel-gzip-4f98a28/pgzip-src
 
-mkdir  $TEST_DIR
-cd $TEST_DIR
+#mkdir  $TEST_DIR
+#cd $TEST_DIR
 
-wget -q $URL
-tar -xzf $TAR
-cd $SUITE
+#wget -q $URL
+#tar -xzf $TAR
+#cd $SUITE
 
 # Prepare different zip programs
 cd gzip
@@ -39,9 +39,9 @@ function testZips(){
     python ${CUR_DIR}/doQuickZip.py -d ${1}MB.txt.gz
 	echo "gzip ${1}"
 	echo "Times for compressing ${1} MB with old gzip" >> tso.txt
-	(/usr/bin/time gzip/gzip  ${1}MB.txt) 2>> tso.txt
+	(/usr/bin/time gzip/gzip -f ${1}MB.txt) 2>> tso.txt
 	rm *.gz
-	rm ${1}MB.txt
+	
 
 }
 
