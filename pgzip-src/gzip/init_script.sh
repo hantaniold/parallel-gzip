@@ -2,9 +2,9 @@
 # Script to Download and Build Gzip
 
 FILE=gzip
-BUILD=gzip124
-ZIP=gz124src.zip
-SRC=http://www.gzip.org/gz124src.zip
+BUILD=gzip-1.3.3
+ZIP=gzip-1.3.3.tar.gz
+SRC=http://www.gzip.org/gzip-1.3.3.tar.gz
 TAR_FLAGS="-xvf"
 
 if [ -f $FILE ]
