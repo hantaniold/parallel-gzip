@@ -5,7 +5,6 @@ FILE=gzip
 BUILD=gzip124
 ZIP=gz124src.zip
 SRC=http://www.gzip.org/gz124src.zip
-TAR_FLAGS="-xvf"
 
 if [ -f $FILE ]
 then
@@ -26,7 +25,7 @@ else
         fi
 
         wget $SRC
-        tar $TAR_FLAGS $ZIP
+        unzip $ZIP
         rm $ZIP
 	
 	if [ -f "$BUILD/configure" ]
