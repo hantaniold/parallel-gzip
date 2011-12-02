@@ -1,6 +1,8 @@
 For the curious, gzip-src contains our initial modifications using OpenMP. The real meat is in pgzip-src, containing a parallel implementation of gzip using p-threads. The below describes the contents of the pgzip-src folder.
 
-To test out the suite, navigate to parallel-gzip/pgzip-src, and run ./test_suite.sh . This will get you all the binaries and test it on a bunch of files. The output times and othe rinfo will go to tso.txt
+To test out the suite, navigate to parallel-gzip/pgzip-src, and run ./test_suite.sh . This will get you all the binaries and test it on a bunch of files. The output times and othe rinfo will go to tso.txt.
+
+The test suite only does filesizes of 20, 100 and 250 MB, though if you wish you can also do them for 500 MB, 750, 1000, 2000 (or any size you desire) by commenting out/adding the desired lines in test_suite.sh .
 
 Last modified: 12/2/11.
 
