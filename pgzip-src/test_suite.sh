@@ -48,9 +48,9 @@ function testZips(){
 testZips 20
 testZips 100
 testZips 250
-testZips 500
-testZips 750
-testZips 1000
-testZips 2000
+#testZips 500
+#testZips 750
+#testZips 1000
+#testZips 2000
 
 rm -rf $TEST_DIR
